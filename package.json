@@ -1,0 +1,22 @@
+{
+  "name": "esp32-smart-cargo-logistics",
+  "version": "1.0.0",
+  "description": "ESP32 Smart Cargo Logistics Edge AI & IoT Dashboard Simulator with Blynk Cloud Sync",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "echo 'Static & Serverless bundle ready for Vercel deployment'"
+  },
+  "keywords": [
+    "esp32",
+    "blynk",
+    "iot",
+    "cargo-logistics",
+    "edge-ai",
+    "wokwi",
+    "vercel"
+  ],
+  "author": "Roshan Kumar",
+  "license": "ISC"
+}

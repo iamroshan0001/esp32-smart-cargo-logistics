@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Cargo Logistics - ESP32 Edge AI & IoT Dashboard</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top Header Navigation -->
+  <header class="app-header">
+    <div class="logo-group">
+      <div class="mcu-badge"><i class="fa-solid fa-microchip"></i> ESP32</div>
+      <h1>Smart Cargo Logistics <span>Edge AI Monitor</span></h1>
+    </div>
+    <div class="header-actions">
+      <div class="blynk-status-badge online" id="blynkStatusBadge">
+        <span class="status-dot"></span> <i class="fa-solid fa-cloud"></i> Blynk Cloud: Connected
+      </div>
+      <button class="btn btn-outline" id="toggleWifiBtn">
+        <i class="fa-solid fa-wifi"></i> <span id="wifiBtnText">Toggle Network Drop</span>
+      </button>
+      <button class="btn btn-primary" id="compileBtn">
+        <i class="fa-solid fa-bolt"></i> Compile Code (CLI)
+      </button>
+    </div>
+  </header>
+
+  <!-- Anomaly Alert Banner -->
+  <div class="alert-banner hidden" id="alertBanner">
+    <div class="alert-content">
+      <i class="fa-solid fa-triangle-exclamation pulse-icon"></i>
+      <div>
+        <strong id="alertTitle">CRITICAL ANOMALY DETECTED</strong>
+        <p id="alertMessage">Cargo monitoring parameters exceed safe operational thresholds.</p>
+      </div>
+    </div>
+    <div class="alert-badge" id="alertSeverity">ALERT</div>
+  </div>
+
+  <!-- Main Container -->
+  <main class="dashboard-grid">
+
+    <!-- Column 1: Hardware & Sensor Controls -->
+    <section class="card sensor-card">
+      <div class="card-header">
+        <h2><i class="fa-solid fa-sliders"></i> Sensor Controls & Inputs</h2>
+        <span class="badge">Hardware Deck</span>
+      </div>
+
+      <!-- Temperature Slider (DHT22) -->
+      <div class="control-group">
+        <div class="control-label">
+          <span><i class="fa-solid fa-temperature-high col-temp"></i> Temperature (DHT22)</span>
+          <span class="val-display" id="tempVal">24.5 °C</span>
+        </div>
+        <input type="range" id="tempSlider" min="-10" max="60" step="0.5" value="24.5">
+        <div class="threshold-info">Limit: &gt; 28.0 °C <span class="tag-status safe" id="tempTag">NORMAL</span></div>
+      </div>
+
+      <!-- Humidity Slider (DHT22) -->
+      <div class="control-group">
+        <div class="control-label">
+          <span><i class="fa-solid fa-droplet col-humidity"></i> Humidity (DHT22)</span>
+          <span class="val-display" id="humVal">45.0 %</span>
+        </div>
+        <input type="range" id="humSlider" min="0" max="100" step="1" value="45">
+      </div>
+
+      <!-- Gas Level Potentiometer (MQ135) -->
+      <div class="control-group">
+        <div class="control-label">
+          <span><i class="fa-solid fa-smog col-gas"></i> Gas Level (MQ135 Pin 34)</span>
+          <span class="val-display" id="gasVal">1450 PPM</span>
+        </div>
+        <input type="range" id="gasSlider" min="0" max="4095" step="10" value="1450">
+        <div class="threshold-info">Limit: &gt; 2200 PPM <span class="tag-status safe" id="gasTag">SAFE</span></div>
+      </div>
+
+      <!-- Motion / Accelerometer (MPU6050) -->
+      <div class="control-group">
+        <div class="control-label">
+          <span><i class="fa-solid fa-cubes-stacked col-motion"></i> Total Acceleration (MPU6050)</span>
+          <span class="val-display" id="motionVal">1.02 G</span>
+        </div>
+        <input type="range" id="motionSlider" min="0.5" max="5.0" step="0.1" value="1.0">
+        <div class="threshold-info">Shock Limit: &gt; 2.50 G <span class="tag-status safe" id="motionTag">STABLE</span></div>
+      </div>
+
+      <!-- Anomaly Simulation Presets -->
+      <div class="presets-section">
+        <h3><i class="fa-solid fa-wand-magic-sparkles"></i> Simulation Presets</h3>
+        <div class="preset-buttons">
+          <button class="btn-preset active" id="presetNormal"><i class="fa-solid fa-check"></i> Normal Road</button>
+          <button class="btn-preset" id="presetDrop"><i class="fa-solid fa-arrow-down-long"></i> Vertical Drop (3.4G)</button>
+          <button class="btn-preset" id="presetImpact"><i class="fa-solid fa-car-burst"></i> Wall Collision (2.9G)</button>
+          <button class="btn-preset" id="presetHeat"><i class="fa-solid fa-fire"></i> Cooling Failure (34.5°C)</button>
+          <button class="btn-preset" id="presetGas"><i class="fa-solid fa-biohazard"></i> Gas Spoilage (3100 PPM)</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Column 2: Live ESP32 Hardware Status & Serial Monitor -->
+    <section class="center-column">
+      
+      <!-- Actuators visual deck -->
+      <div class="card actuators-card">
+        <div class="card-header">
+          <h2><i class="fa-solid fa-microchip"></i> ESP32 Actuators & Circuit State</h2>
+          <span class="badge badge-live"><i class="fa-solid fa-circle-dot"></i> Live Simulation</span>
+        </div>
+
+        <div class="actuator-grid">
+          <div class="actuator-box" id="ledGreenBox">
+            <div class="led-light led-green active"></div>
+            <span>Status LED</span>
+            <strong id="ledStatusText">GREEN (NORMAL)</strong>
+          </div>
+
+          <div class="actuator-box" id="ledRedBox">
+            <div class="led-light led-red"></div>
+            <span>Alert LED</span>
+            <strong id="redLedText">RED (OFF)</strong>
+          </div>
+
+          <div class="actuator-box" id="buzzerBox">
+            <div class="buzzer-icon"><i class="fa-solid fa-volume-high"></i></div>
+            <span>Alarm Buzzer (Pin 13)</span>
+            <strong id="buzzerText">MUTED</strong>
+          </div>
+
+          <div class="actuator-box" id="relayBox">
+            <div class="relay-switch"><i class="fa-solid fa-fan"></i></div>
+            <span>Cooling Relay (Pin 27)</span>
+            <strong id="relayText">RELAY OFF</strong>
+          </div>
+        </div>
+
+        <!-- 3D Interactive Container Visualization -->
+        <div class="container-3d-wrapper">
+          <div class="container-box" id="cargoBox">
+            <div class="box-face front"><i class="fa-solid fa-box-open"></i> SMART CARGO CUBE</div>
+            <div class="box-face back">SENSORS INSIDE</div>
+            <div class="box-face right">MPU6050</div>
+            <div class="box-face left">DHT22</div>
+            <div class="box-face top">ESP32 MCU</div>
+            <div class="box-face bottom">BASE</div>
+          </div>
+          <p class="container-hint"><i class="fa-solid fa-hand-pointer"></i> Container angle updates with MPU6050 orientation data</p>
+        </div>
+      </div>
+
+      <!-- Serial Monitor Logs -->
+      <div class="card console-card">
+        <div class="card-header">
+          <h2><i class="fa-solid fa-terminal"></i> ESP32 Serial Monitor (115200 baud)</h2>
+          <div class="console-actions">
+            <button class="btn-sm" id="clearConsoleBtn"><i class="fa-solid fa-trash"></i> Clear</button>
+            <button class="btn-sm" id="copyConsoleBtn"><i class="fa-solid fa-copy"></i> Copy</button>
+          </div>
+        </div>
+        <div class="serial-output" id="serialOutput"></div>
+      </div>
+    </section>
+
+    <!-- Column 3: Blynk IoT Cloud Dashboard & Analytics -->
+    <section class="card blynk-card">
+      <div class="card-header">
+        <h2><i class="fa-solid fa-cloud-sun"></i> Blynk Cloud IoT Dashboard</h2>
+        <span class="blynk-template-tag">Template: Smart Logistics</span>
+      </div>
+
+      <!-- Blynk Credentials Box -->
+      <div class="blynk-meta">
+        <div><strong>Template ID:</strong> <code>TMPL3imDDVEN3</code></div>
+        <div><strong>Auth Token:</strong> <code>flLS...FA</code></div>
+      </div>
+
+      <!-- Virtual Pins Telemetry Cards -->
+      <div class="vpin-cards">
+        <div class="vpin-card">
+          <div class="vpin-header">
+            <span><i class="fa-solid fa-temperature-three-quarters col-temp"></i> Virtual Pin V1</span>
+            <span class="vpin-name">Temperature</span>
+          </div>
+          <div class="vpin-val" id="v1Val">24.5 °C</div>
+        </div>
+
+        <div class="vpin-card">
+          <div class="vpin-header">
+            <span><i class="fa-solid fa-gauge-high col-gas"></i> Virtual Pin V2</span>
+            <span class="vpin-name">Gas Reading</span>
+          </div>
+          <div class="vpin-val" id="v2Val">1450</div>
+        </div>
+
+        <div class="vpin-card">
+          <div class="vpin-header">
+            <span><i class="fa-solid fa-wave-square col-motion"></i> Virtual Pin V3</span>
+            <span class="vpin-name">G-Force Motion</span>
+          </div>
+          <div class="vpin-val" id="v3Val">1.02 G</div>
+        </div>
+      </div>
+
+      <!-- Live Realtime Telemetry Chart -->
+      <div class="chart-container">
+        <canvas id="telemetryChart"></canvas>
+      </div>
+
+      <!-- Offline Storage Cache Monitor -->
+      <div class="cache-monitor">
+        <div class="cache-header">
+          <span><i class="fa-solid fa-database"></i> Offline Memory Ring Buffer</span>
+          <span id="cacheCountText">0 / 20 Logs Cached</span>
+        </div>
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" id="cacheProgress" style="width: 0%;"></div>
+        </div>
+        <p class="cache-desc" id="cacheDesc"><i class="fa-solid fa-shield-halved"></i> Online mode: Data stream direct to Blynk Cloud.</p>
+      </div>
+
+      <!-- CLI Build / Compilation Info Modal / Footer -->
+      <div class="compiler-box">
+        <h3><i class="fa-solid fa-gear"></i> ESP32 CLI Build Details</h3>
+        <p>Target FQBN: <code>esp32:esp32:esp32</code></p>
+        <div class="build-logs" id="cliBuildStatus">Compiler initialized. Ready for build trigger.</div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
