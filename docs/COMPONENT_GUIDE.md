@@ -42,12 +42,22 @@ This visual guide contains exact images, part numbers, and labels for all hardwa
 
 ## 3. Actuators, Breadboard & Wiring Kit
 
-### 🔹 **Relay, Buzzer, LEDs, Breadboard & Jumpers**
-- **5V 1-Channel Relay Module**: 1 Pc (Blue cube module with screw terminals)
+### 🔹 **5V 1-Channel Relay Module (Songle SRD-05VDC-SL-C)** — Quantity: 1
+- **Exact Name**: 5V 1-Channel Relay Breakout Module (Songle SRD-05VDC-SL-C)
+- **Key Identifiers**: Blue cube relay with 3 screw terminals (`NO`, `COM`, `NC`) on the output side, and 3 pins (`VCC`, `GND`, `IN`) with status LEDs on the signal side.
+
+---
+
+### 🔹 **MB-102 830-Point Solderless Breadboard** — Quantity: 1
+- **Exact Name**: MB-102 830-Point Solderless Breadboard
+- **Key Identifiers**: Full-size white breadboard with 63 column rows and 2 full-length power rail strips (Red `+` / Blue `-`) on top and bottom.
+
+---
+
+### 🔹 **Buzzer, LEDs & Jumpers**
 - **5V Active Buzzer Module**: 1 Pc (Black cylindrical buzzer)
 - **5mm Red LED & 5mm Green LED**: 1 Pc each
 - **220 Ohm Resistors**: 2 Pcs
-- **830-Point Solderless Breadboard**: 1 Pc
 - **Dupont Jumper Wires**: 1 Pack Male-to-Male + 1 Pack Male-to-Female
 
 ![Hardware Accessories Kit](./images/hardware_accessories_kit_1790011514495.jpg)
