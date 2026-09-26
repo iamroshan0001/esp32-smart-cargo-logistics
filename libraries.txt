@@ -1,5 +1,6 @@
-Adafruit MPU6050
+Adafruit ADXL345
 Adafruit Unified Sensor
 Adafruit BusIO
 DHT sensor library
+LiquidCrystal I2C
 Blynk

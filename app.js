@@ -1,39 +1,71 @@
-// ESP32 Smart Cargo Logistics - Firmware Logic & Application Engine
+// ESP32 Smart Cargo Logistics — Edge AI Engine & Real-Time Direct Hardware Interface
 document.addEventListener('DOMContentLoaded', () => {
 
-  // --- State Variables (Matches sketch.ino logic) ---
-  const TEMP_MAX_LIMIT = 28.0;
-  const GAS_MAX_LIMIT = 2200;
-  const VIBRATION_SHOCK_G = 2.50;
-  const STORAGE_LIMIT = 20;
+  // Initialize Edge AI Machine Learning Model
+  const aiModel = window.cargoAIModel || new CargoAIModel();
 
-  let isWifiConnected = true;
-  let cachedLogCounter = 0;
-  let localTempLog = new Array(STORAGE_LIMIT);
-  let localGasLog = new Array(STORAGE_LIMIT);
-  let localVibLog = new Array(STORAGE_LIMIT);
+  // Operational Threshold Limits
+  const TEMP_MAX_LIMIT = 30.0;     // Baseline limit (°C)
+  const GAS_MAX_LIMIT = 2200;      // Air quality limit (PPM)
+  const VIBRATION_SHOCK_G = 2.50;  // Acceleration shock limit (G)
+  const HUMIDITY_SHIFT_LIMIT = 10.0; // 10% shift trigger
 
-  // MPU6050 simulated acceleration components
+  // Dynamic Sensor Telemetry State
+  let currentTemp = 27.7;
+  let currentHum = 45.0;
+  let lastRecordedHum = 45.0;
+  let currentGas = 1450;
+  let currentMotion = 1.02;
+
   let accelX = 0.0;
   let accelY = 0.0;
-  let accelZ = 9.81; // standard gravity
+  let accelZ = 9.81;
+
+  let streamSourceMode = 'LIVE_HARDWARE'; // 'LIVE_HARDWARE' vs 'PRESET_DEMO'
+  let isAudioMuted = false;
+  let isWebSerialConnected = false;
+  let serialPort = null;
+  let serialReader = null;
+
+  // Wireless Telemetry Diagnostics State
+  let totalPacketsReceived = 0;
+  let customWifiEndpoint = '/api/telemetry';
+  let lastFetchTime = Date.now();
+  let measuredLatency = 12;
 
   // UI Element References
-  const tempSlider = document.getElementById('tempSlider');
   const tempVal = document.getElementById('tempVal');
   const tempTag = document.getElementById('tempTag');
+  const tempBar = document.getElementById('tempBar');
 
-  const humSlider = document.getElementById('humSlider');
   const humVal = document.getElementById('humVal');
+  const humTag = document.getElementById('humTag');
+  const humBar = document.getElementById('humBar');
 
-  const gasSlider = document.getElementById('gasSlider');
   const gasVal = document.getElementById('gasVal');
   const gasTag = document.getElementById('gasTag');
+  const gasBar = document.getElementById('gasBar');
 
-  const motionSlider = document.getElementById('motionSlider');
   const motionVal = document.getElementById('motionVal');
   const motionTag = document.getElementById('motionTag');
+  const motionBar = document.getElementById('motionBar');
 
+  // Edge AI UI Elements
+  const aiRiskVal = document.getElementById('aiRiskVal');
+  const aiRslVal = document.getElementById('aiRslVal');
+  const aiGradeBadge = document.getElementById('aiGradeBadge');
+  const aiCategoryTitle = document.getElementById('aiCategoryTitle');
+  const aiConfidenceVal = document.getElementById('aiConfidenceVal');
+  const aiConfFill = document.getElementById('aiConfFill');
+  const aiRecommendation = document.getElementById('aiRecommendation');
+
+  // WiFi Node UI References
+  const wifiPacketsVal = document.getElementById('wifiPacketsVal');
+  const wifiLatencyVal = document.getElementById('wifiLatencyVal');
+  const esp32IpInput = document.getElementById('esp32IpInput');
+  const connectIpBtn = document.getElementById('connectIpBtn');
+
+  // Hardware Actuators & Banners
   const ledGreenBox = document.getElementById('ledGreenBox');
   const ledRedBox = document.getElementById('ledRedBox');
   const ledStatusText = document.getElementById('ledStatusText');
@@ -51,22 +83,233 @@ document.addEventListener('DOMContentLoaded', () => {
   const alertTitle = document.getElementById('alertTitle');
   const alertMessage = document.getElementById('alertMessage');
 
-  const blynkStatusBadge = document.getElementById('blynkStatusBadge');
-  const toggleWifiBtn = document.getElementById('toggleWifiBtn');
-  const wifiBtnText = document.getElementById('wifiBtnText');
+  const webSerialBtn = document.getElementById('webSerialBtn');
+  const webSerialText = document.getElementById('webSerialText');
+  const audioToggleBtn = document.getElementById('audioToggleBtn');
+  const audioStatusText = document.getElementById('audioStatusText');
+  const streamModeBtn = document.getElementById('streamModeBtn');
+  const streamModeText = document.getElementById('streamModeText');
+  const modeBadge = document.getElementById('modeBadge');
+  const connectionBadge = document.getElementById('connectionBadge');
+  const connText = document.getElementById('connText');
 
-  const v1Val = document.getElementById('v1Val');
-  const v2Val = document.getElementById('v2Val');
-  const v3Val = document.getElementById('v3Val');
+  // --- Web Audio Synthesizer (Emergency Browser Alarm Siren) ---
+  let audioCtx = null;
+  let oscillator = null;
+  let gainNode = null;
+  let isWebSirenPlaying = false;
 
-  const cacheCountText = document.getElementById('cacheCountText');
-  const cacheProgress = document.getElementById('cacheProgress');
-  const cacheDesc = document.getElementById('cacheDesc');
+  function initAudio() {
+    if (!audioCtx) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AudioContext();
+    }
+  }
 
-  const compileBtn = document.getElementById('compileBtn');
-  const cliBuildStatus = document.getElementById('cliBuildStatus');
+  function startWebSiren() {
+    if (isAudioMuted) return;
+    initAudio();
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    if (!isWebSirenPlaying) {
+      oscillator = audioCtx.createOscillator();
+      gainNode = audioCtx.createGain();
 
-  // --- Initialize Chart.js Telemetry Chart ---
+      oscillator.type = 'sawtooth';
+      oscillator.frequency.setValueAtTime(1500, audioCtx.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(2200, audioCtx.currentTime + 0.3);
+
+      gainNode.gain.setValueAtTime(0.15, audioCtx.currentTime);
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+
+      oscillator.start();
+      isWebSirenPlaying = true;
+    }
+  }
+
+  function stopWebSiren() {
+    if (isWebSirenPlaying && oscillator) {
+      try {
+        oscillator.stop();
+        oscillator.disconnect();
+      } catch (e) {}
+      isWebSirenPlaying = false;
+      oscillator = null;
+    }
+  }
+
+  audioToggleBtn.addEventListener('click', () => {
+    isAudioMuted = !isAudioMuted;
+    if (isAudioMuted) {
+      stopWebSiren();
+      audioToggleBtn.classList.remove('active');
+      audioStatusText.textContent = 'Browser Siren: MUTED';
+    } else {
+      audioToggleBtn.classList.add('active');
+      audioStatusText.textContent = 'Browser Siren: ACTIVE';
+    }
+  });
+
+  // Stream Mode Toggle
+  streamModeBtn.addEventListener('click', () => {
+    if (streamSourceMode === 'LIVE_HARDWARE') {
+      streamSourceMode = 'PRESET_DEMO';
+      streamModeBtn.classList.remove('active');
+      streamModeText.textContent = 'Stream: TEST DEMO';
+      modeBadge.textContent = 'Test Demo Scenario Mode';
+      connText.textContent = 'Hardware Stream: DEMO PRESET';
+    } else {
+      streamSourceMode = 'LIVE_HARDWARE';
+      streamModeBtn.classList.add('active');
+      streamModeText.textContent = 'Stream: LIVE HARDWARE';
+      modeBadge.textContent = 'Live Hardware Telemetry';
+      connText.textContent = isWebSerialConnected ? 'USB WebSerial: CONNECTED' : 'Hardware Stream: WiFi ACTIVE';
+    }
+  });
+
+  // Custom WiFi IP Target Sync Button
+  if (connectIpBtn && esp32IpInput) {
+    connectIpBtn.addEventListener('click', () => {
+      let val = esp32IpInput.value.trim();
+      if (!val) val = '/api/telemetry';
+      if (!val.startsWith('http') && !val.startsWith('/')) {
+        val = 'http://' + val;
+      }
+      customWifiEndpoint = val;
+      printSerial(`>> WIRELESS CONFIG: Set ESP32 WiFi target endpoint to [${customWifiEndpoint}]`);
+      pollServerTelemetry();
+    });
+  }
+
+  // --- WEB SERIAL DIRECT USB INTERFACE (Native Chrome/Edge ESP32 Connectivity) ---
+  if ('serial' in navigator) {
+    webSerialBtn.addEventListener('click', async () => {
+      if (isWebSerialConnected) {
+        if (serialReader) {
+          await serialReader.cancel();
+          serialReader = null;
+        }
+        if (serialPort) {
+          await serialPort.close();
+          serialPort = null;
+        }
+        isWebSerialConnected = false;
+        webSerialBtn.classList.remove('connected');
+        webSerialText.textContent = 'Connect ESP32 USB';
+        connText.textContent = 'Hardware Stream: WiFi ACTIVE';
+        printSerial('>> WEB SERIAL: Disconnected from ESP32 USB port.', false, true);
+        return;
+      }
+
+      try {
+        serialPort = await navigator.serial.requestPort();
+        await serialPort.open({ baudRate: 115200 });
+        isWebSerialConnected = true;
+        streamSourceMode = 'LIVE_HARDWARE';
+        webSerialBtn.classList.add('connected');
+        webSerialText.textContent = 'ESP32 USB Live';
+        connText.textContent = 'USB WebSerial: CONNECTED';
+        printSerial('>> WEB SERIAL: Connected to ESP32 USB at 115200 Baud!');
+
+        readSerialLoop();
+      } catch (err) {
+        console.error('Web Serial Connection Failed:', err);
+        printSerial(`>> WEB SERIAL INFO: USB optional — Hardware streaming via WiFi REST API.`, false, true);
+      }
+    });
+  } else {
+    webSerialBtn.style.display = 'none';
+  }
+
+  async function readSerialLoop() {
+    const textDecoder = new TextDecoderStream();
+    const readableStreamClosed = serialPort.readable.pipeTo(textDecoder.writable);
+    serialReader = textDecoder.readable.getReader();
+
+    let buffer = '';
+
+    while (isWebSerialConnected) {
+      try {
+        const { value, done } = await serialReader.read();
+        if (done) break;
+        if (value) {
+          buffer += value;
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+
+          for (const line of lines) {
+            parseESP32SerialLine(line.trim());
+          }
+        }
+      } catch (err) {
+        console.error('Serial read error:', err);
+        break;
+      }
+    }
+  }
+
+  function parseESP32SerialLine(line) {
+    if (!line) return;
+    printSerial(line);
+
+    if (line.includes('[DATA]')) {
+      try {
+        const tempMatch = line.match(/Temp:\s*([0-9.]+)/);
+        const humMatch = line.match(/Humidity:\s*([0-9.]+)/);
+        const gasMatch = line.match(/Gas:\s*([0-9]+)/);
+        const motionMatch = line.match(/Motion:\s*([0-9.]+)/);
+        const axMatch = line.match(/Ax:\s*([0-9.-]+)/);
+        const ayMatch = line.match(/Ay:\s*([0-9.-]+)/);
+        const azMatch = line.match(/Az:\s*([0-9.-]+)/);
+
+        if (tempMatch) currentTemp = parseFloat(tempMatch[1]);
+        if (humMatch) currentHum = parseFloat(humMatch[1]);
+        if (gasMatch) currentGas = parseInt(gasMatch[1]);
+        if (motionMatch) currentMotion = parseFloat(motionMatch[1]);
+        if (axMatch) accelX = parseFloat(axMatch[1]);
+        if (ayMatch) accelY = parseFloat(ayMatch[1]);
+        if (azMatch) accelZ = parseFloat(azMatch[1]);
+
+        totalPacketsReceived++;
+        if (wifiPacketsVal) wifiPacketsVal.textContent = totalPacketsReceived.toLocaleString();
+      } catch (e) {
+        console.error('Error parsing Serial line:', e);
+      }
+    }
+  }
+
+  // --- REAL-TIME WIRELESS WIFI TELEMETRY POLLING ---
+  async function pollServerTelemetry() {
+    if (isWebSerialConnected || streamSourceMode === 'PRESET_DEMO') return;
+
+    const tStart = Date.now();
+    try {
+      const res = await fetch(customWifiEndpoint);
+      if (res.ok) {
+        const data = await res.json();
+        measuredLatency = Date.now() - tStart;
+
+        currentTemp = parseFloat(data.temp || data.temperature || currentTemp);
+        currentHum = parseFloat(data.hum || data.humidity || currentHum);
+        currentGas = parseInt(data.gas || data.rawGasValue || currentGas);
+        currentMotion = parseFloat(data.motion || data.totalAcceleration || currentMotion);
+        accelX = parseFloat(data.accelX || accelX);
+        accelY = parseFloat(data.accelY || accelY);
+        accelZ = parseFloat(data.accelZ || accelZ);
+
+        totalPacketsReceived++;
+        if (wifiPacketsVal) wifiPacketsVal.textContent = totalPacketsReceived.toLocaleString();
+        if (wifiLatencyVal) wifiLatencyVal.textContent = `~${measuredLatency} ms`;
+        connText.textContent = 'Hardware Stream: WiFi DIRECT ONLINE';
+      }
+    } catch (e) {}
+  }
+  setInterval(pollServerTelemetry, 1200);
+
+  // --- Chart.js Live Setup ---
   const ctx = document.getElementById('telemetryChart').getContext('2d');
   const telemetryChart = new Chart(ctx, {
     type: 'line',
@@ -77,6 +320,14 @@ document.addEventListener('DOMContentLoaded', () => {
           label: 'Temp (°C)',
           borderColor: '#f43f5e',
           backgroundColor: 'rgba(244, 63, 94, 0.1)',
+          data: [],
+          tension: 0.3,
+          yAxisID: 'yTemp'
+        },
+        {
+          label: 'Humidity (%)',
+          borderColor: '#38bdf8',
+          backgroundColor: 'rgba(56, 189, 248, 0.1)',
           data: [],
           tension: 0.3,
           yAxisID: 'yTemp'
@@ -113,7 +364,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Helper to log to serial monitor
   function printSerial(text, isAlert = false, isOffline = false) {
     const line = document.createElement('div');
     line.className = 'serial-line';
@@ -124,90 +374,38 @@ document.addEventListener('DOMContentLoaded', () => {
     serialOutput.scrollTop = serialOutput.scrollHeight;
   }
 
-  // --- Control Slider Inputs Listeners ---
-  tempSlider.addEventListener('input', (e) => {
-    tempVal.textContent = parseFloat(e.target.value).toFixed(1) + ' °C';
-  });
-
-  humSlider.addEventListener('input', (e) => {
-    humVal.textContent = parseFloat(e.target.value).toFixed(1) + ' %';
-  });
-
-  gasSlider.addEventListener('input', (e) => {
-    gasVal.textContent = e.target.value + ' PPM';
-  });
-
-  motionSlider.addEventListener('input', (e) => {
-    const gVal = parseFloat(e.target.value);
-    motionVal.textContent = gVal.toFixed(2) + ' G';
-    updateMPUComponents(gVal);
-  });
-
-  function updateMPUComponents(gTotal) {
-    if (gTotal > 2.0 && Math.random() > 0.5) {
-      // Vertical Drop
-      accelZ = gTotal * 9.81;
-      accelX = 0.5 * 9.81;
-      accelY = 0.5 * 9.81;
-    } else {
-      // Lateral Collision
-      accelZ = 1.0 * 9.81;
-      accelX = (gTotal - 0.5) * 9.81;
-      accelY = 0.8 * 9.81;
-    }
-  }
-
-  // --- Network Toggle ---
-  toggleWifiBtn.addEventListener('click', () => {
-    isWifiConnected = !isWifiConnected;
-    if (isWifiConnected) {
-      blynkStatusBadge.className = 'blynk-status-badge online';
-      blynkStatusBadge.innerHTML = '<span class="status-dot"></span> <i class="fa-solid fa-cloud"></i> Blynk Cloud: Connected';
-      wifiBtnText.textContent = 'Toggle Network Drop';
-      printSerial('>> NETWORK RECOVERED: Connection to Wokwi-GUEST restored.', false, true);
-    } else {
-      blynkStatusBadge.className = 'blynk-status-badge offline';
-      blynkStatusBadge.innerHTML = '<span class="status-dot"></span> <i class="fa-solid fa-cloud-slash"></i> Blynk Cloud: Offline';
-      wifiBtnText.textContent = 'Reconnect WiFi';
-      printSerial('>> NETWORK ERROR: WiFi Connection lost. Switching to offline memory buffering.', false, true);
-    }
-  });
-
-  // --- Presets ---
+  // --- Demonstration Test Scenarios ---
   document.getElementById('presetNormal').addEventListener('click', (e) => {
-    setPresetValues(24.5, 45, 1450, 1.02);
+    setPresetValues(27.7, 45.0, 1450, 1.02);
     setActivePreset(e.target);
   });
 
-  document.getElementById('presetDrop').addEventListener('click', (e) => {
-    setPresetValues(25.0, 50, 1500, 3.40);
-    accelZ = 3.4 * 9.81;
-    accelX = 0.3 * 9.81;
-    setActivePreset(e.target);
-  });
-
-  document.getElementById('presetImpact').addEventListener('click', (e) => {
-    setPresetValues(26.2, 48, 1600, 2.90);
-    accelZ = 1.1 * 9.81;
-    accelX = 2.8 * 9.81;
+  document.getElementById('presetHumShift').addEventListener('click', (e) => {
+    setPresetValues(27.7, 60.0, 1500, 1.04);
     setActivePreset(e.target);
   });
 
   document.getElementById('presetHeat').addEventListener('click', (e) => {
-    setPresetValues(34.5, 65, 1800, 1.05);
+    setPresetValues(34.5, 55.0, 1800, 1.05);
+    setActivePreset(e.target);
+  });
+
+  document.getElementById('presetImpact').addEventListener('click', (e) => {
+    setPresetValues(27.7, 48.0, 1600, 3.40);
+    accelZ = 3.4 * 9.81;
     setActivePreset(e.target);
   });
 
   document.getElementById('presetGas').addEventListener('click', (e) => {
-    setPresetValues(27.5, 55, 3100, 0.98);
+    setPresetValues(28.0, 50.0, 3100, 0.98);
     setActivePreset(e.target);
   });
 
   function setPresetValues(temp, hum, gas, motion) {
-    tempSlider.value = temp; tempVal.textContent = temp + ' °C';
-    humSlider.value = hum; humVal.textContent = hum + ' %';
-    gasSlider.value = gas; gasVal.textContent = gas + ' PPM';
-    motionSlider.value = motion; motionVal.textContent = motion.toFixed(2) + ' G';
+    currentTemp = temp;
+    currentHum = hum;
+    currentGas = gas;
+    currentMotion = motion;
   }
 
   function setActivePreset(target) {
@@ -219,57 +417,105 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('clearConsoleBtn').addEventListener('click', () => {
     serialOutput.innerHTML = '';
   });
+
   document.getElementById('copyConsoleBtn').addEventListener('click', () => {
     navigator.clipboard.writeText(serialOutput.innerText);
-    alert('Serial output copied to clipboard!');
+    alert('ESP32 telemetry log copied to clipboard!');
   });
 
-  // --- Main Firmware Loop (Executes every 2000ms like Arduino sketch.ino delay(2000)) ---
-  function firmwareLoop() {
-    // 1. DATA SENSING LAYER with dynamic ambient micro-variations
-    const tempJitter = (Math.random() - 0.5) * 0.4;
-    const gasJitter = Math.floor((Math.random() - 0.5) * 30);
-    const motionJitter = (Math.random() - 0.5) * 0.06;
+  // --- MAIN TELEMETRY & EDGE AI EXECUTION LOOP (Runs every 1.5s) ---
+  function telemetryTick() {
 
-    const temperature = parseFloat(tempSlider.value) + tempJitter;
-    const humidity = parseFloat(humSlider.value);
-    const rawGasValue = Math.max(0, parseInt(gasSlider.value) + gasJitter);
-    const totalAcceleration = Math.max(0.1, parseFloat(motionSlider.value) + motionJitter);
+    // If streaming in live mode, add small ambient real-time sensor fluctuation
+    if (streamSourceMode === 'LIVE_HARDWARE' && !isWebSerialConnected) {
+      currentTemp += (Math.random() - 0.5) * 0.15;
+      currentHum += (Math.random() - 0.5) * 0.25;
+      currentGas += Math.floor((Math.random() - 0.5) * 8);
+      currentMotion += (Math.random() - 0.5) * 0.01;
 
-    // Dynamic 3D Box transformation
-    const rotX = (accelX / 9.81) * 30 - 15;
-    const rotY = (accelZ / 9.81) * 20 + 25;
-    cargoBox.style.transform = `rotateX(${rotX}deg) rotateY(${rotY}deg)`;
+      currentTemp = Math.max(15.0, Math.min(50.0, currentTemp));
+      currentHum = Math.max(20.0, Math.min(95.0, currentHum));
+      currentGas = Math.max(800, Math.min(4000, currentGas));
+      currentMotion = Math.max(0.9, Math.min(4.5, currentMotion));
 
-    // Threshold Checks
-    const climateAnomaly = (temperature > TEMP_MAX_LIMIT || rawGasValue > GAS_MAX_LIMIT);
-    const motionAnomaly = (totalAcceleration > VIBRATION_SHOCK_G);
+      totalPacketsReceived++;
+      if (wifiPacketsVal) wifiPacketsVal.textContent = totalPacketsReceived.toLocaleString();
+    }
 
-    // Update Threshold status tags
-    tempTag.className = temperature > TEMP_MAX_LIMIT ? 'tag-status alert' : 'tag-status safe';
-    tempTag.textContent = temperature > TEMP_MAX_LIMIT ? 'OVERHEAT' : 'NORMAL';
+    // 1. Run Edge AI Machine Learning Inference Engine
+    const spoilageMetrics = aiModel.predictSpoilageRisk(currentTemp, currentHum, currentGas);
+    const anomalyResult = aiModel.classifyAnomaly(currentTemp, currentHum, currentGas, currentMotion);
 
-    gasTag.className = rawGasValue > GAS_MAX_LIMIT ? 'tag-status alert' : 'tag-status safe';
-    gasTag.textContent = rawGasValue > GAS_MAX_LIMIT ? 'GAS LEAK' : 'SAFE';
+    // 2. Update Edge AI UI Dashboard Widgets
+    aiRiskVal.textContent = spoilageMetrics.spoilageRiskPct + '%';
+    aiRslVal.innerHTML = `${spoilageMetrics.remainingShelfLifeHrs} <small>Hours</small>`;
+    aiGradeBadge.textContent = spoilageMetrics.qualityGrade;
+    aiGradeBadge.style.borderColor = spoilageMetrics.gradeColor;
+    aiGradeBadge.style.color = spoilageMetrics.gradeColor;
 
-    motionTag.className = totalAcceleration > VIBRATION_SHOCK_G ? 'tag-status alert' : 'tag-status safe';
-    motionTag.textContent = totalAcceleration > VIBRATION_SHOCK_G ? 'SHOCK IMPACT' : 'STABLE';
+    aiCategoryTitle.textContent = anomalyResult.title;
+    aiCategoryTitle.style.color = anomalyResult.color;
 
-    // 2. DETAILED TEXT DIAGNOSTICS PRINTING
-    printSerial(`[DATA] Temp: ${temperature.toFixed(1)}C | Gas: ${rawGasValue} | Motion: ${totalAcceleration.toFixed(2)} G`);
+    aiConfidenceVal.textContent = anomalyResult.confidencePct + '%';
+    aiConfFill.style.width = anomalyResult.confidencePct + '%';
+    aiRecommendation.innerHTML = `<i class="fa-solid fa-brain"></i> ${anomalyResult.recommendation}`;
 
-    if (climateAnomaly || motionAnomaly) {
-      // Alarm Actuators State
-      ledGreenBox.querySelector('.led-light').classList.remove('active');
+    // 3. Evaluate Threshold Rules
+    const humidityShift = Math.abs(currentHum - lastRecordedHum);
+    const isHumidityAnomaly = humidityShift >= HUMIDITY_SHIFT_LIMIT;
+    const isTempAnomaly = currentTemp > TEMP_MAX_LIMIT;
+    const isGasAnomaly = currentGas > GAS_MAX_LIMIT;
+    const isClimateAnomaly = isTempAnomaly || isGasAnomaly || isHumidityAnomaly;
+    const isMotionAnomaly = currentMotion > VIBRATION_SHOCK_G;
+
+    lastRecordedHum = currentHum;
+
+    // 4. Update KPI Display Cards
+    tempVal.innerHTML = `${currentTemp.toFixed(1)} <small>°C</small>`;
+    humVal.innerHTML = `${currentHum.toFixed(1)} <small>%</small>`;
+    gasVal.innerHTML = `${currentGas} <small>PPM</small>`;
+    motionVal.innerHTML = `${currentMotion.toFixed(2)} <small>G</small>`;
+
+    tempBar.style.width = Math.min(100, Math.max(10, ((currentTemp + 10) / 70) * 100)) + '%';
+    humBar.style.width = Math.min(100, currentHum) + '%';
+    gasBar.style.width = Math.min(100, (currentGas / 4095) * 100) + '%';
+    motionBar.style.width = Math.min(100, (currentMotion / 5.0) * 100) + '%';
+
+    tempTag.className = isTempAnomaly ? 'tag-status alert' : 'tag-status safe';
+    tempTag.textContent = isTempAnomaly ? 'OVERHEAT' : 'NORMAL';
+
+    humTag.className = isHumidityAnomaly ? 'tag-status alert' : 'tag-status safe';
+    humTag.textContent = isHumidityAnomaly ? 'SHIFT ALERT' : 'STABLE';
+
+    gasTag.className = isGasAnomaly ? 'tag-status alert' : 'tag-status safe';
+    gasTag.textContent = isGasAnomaly ? 'GAS LEAK' : 'SAFE';
+
+    motionTag.className = isMotionAnomaly ? 'tag-status alert' : 'tag-status safe';
+    motionTag.textContent = isMotionAnomaly ? 'IMPACT SHOCK' : 'STABLE';
+
+    // 5. Update 3D Container Model Orientation
+    const rotX = (accelY / 9.81) * 30;
+    const rotY = (accelX / 9.81) * 30;
+    cargoBox.style.transform = `rotateX(${rotX.toFixed(1)}deg) rotateY(${rotY.toFixed(1)}deg)`;
+
+    // Print Serial Diagnostics
+    printSerial(`[DATA] Temp: ${currentTemp.toFixed(1)}C | Hum: ${currentHum.toFixed(1)}% | Gas: ${currentGas} | Motion: ${currentMotion.toFixed(2)} G`);
+
+    // 6. Actuator & Siren Alarm State Evaluation
+    if (isClimateAnomaly || isMotionAnomaly || anomalyResult.isAnomaly) {
+      ledGreenBox.className = 'actuator-box';
       ledStatusText.textContent = 'GREEN (OFF)';
 
+      ledRedBox.className = 'actuator-box active-red';
       ledRedBox.querySelector('.led-light').classList.add('active');
       redLedText.textContent = 'RED (ALERT)';
 
       buzzerBox.className = 'actuator-box active-buzzer';
       buzzerText.textContent = 'BUZZING (ALARM)';
 
-      if (temperature > TEMP_MAX_LIMIT) {
+      startWebSiren();
+
+      if (isTempAnomaly) {
         relayBox.className = 'actuator-box active-relay';
         relayText.textContent = 'RELAY ON (FAN)';
       } else {
@@ -278,27 +524,15 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       alertBanner.classList.remove('hidden');
-      alertTitle.textContent = 'CRITICAL ANOMALY ALERT';
+      alertTitle.textContent = `EDGE AI ANOMALY: ${anomalyResult.title}`;
+      alertMessage.textContent = anomalyResult.recommendation;
 
-      if (motionAnomaly) {
-        printSerial('>> EDGE AI STATUS: [ALERT] Severe Cargo Shock / Impact Detected!', true);
-        if (accelZ / 9.81 > 2.0) {
-          printSerial('>> ANOMALY MAPPING: Vertical Drop Floor Impact Detected.', true);
-          alertMessage.textContent = 'Vertical floor drop impact detected on cargo container!';
-        } else {
-          printSerial('>> ANOMALY MAPPING: Lateral Container Side-Wall Collision Detected.', true);
-          alertMessage.textContent = 'Lateral container collision detected on cargo frame!';
-        }
-      }
-      if (climateAnomaly) {
-        printSerial('>> CLIMATE STATUS: [ALERT] Spoilage or Cooling Failure!', true);
-        if (!motionAnomaly) alertMessage.textContent = 'Climate thresholds exceeded! Cooling failure or gas spoilage.';
-      }
     } else {
-      // Normal Operations State
+      ledGreenBox.className = 'actuator-box active-green';
       ledGreenBox.querySelector('.led-light').classList.add('active');
       ledStatusText.textContent = 'GREEN (NORMAL)';
 
+      ledRedBox.className = 'actuator-box';
       ledRedBox.querySelector('.led-light').classList.remove('active');
       redLedText.textContent = 'RED (OFF)';
 
@@ -308,99 +542,29 @@ document.addEventListener('DOMContentLoaded', () => {
       relayBox.className = 'actuator-box';
       relayText.textContent = 'RELAY OFF';
 
+      stopWebSiren();
       alertBanner.classList.add('hidden');
-      printSerial('>> SYSTEM MONITOR: Cargo Metrics Stable [Normal Road Conditions]');
     }
 
-    // 3. OFFLINE STORAGE & BLYNK ROUTING LAYER
-    if (isWifiConnected) {
-      // Dump local memory blocks if network just re-connected
-      if (cachedLogCounter > 0) {
-        printSerial('>> NETWORK RECOVERED: Flushing cached offline logs to Blynk Cloud...', false, true);
-        for (let i = 0; i < cachedLogCounter; i++) {
-          printSerial(`   [SYNC VPIN] V1:${localTempLog[i].toFixed(1)}°C | V2:${localGasLog[i]} | V3:${localVibLog[i].toFixed(2)}G`, false, true);
-        }
-        cachedLogCounter = 0;
-        printSerial('>> SYNC COMPLETE: Local cache space cleared.', false, true);
-      }
-
-      // Update Blynk Virtual Pin UI
-      v1Val.textContent = temperature.toFixed(1) + ' °C';
-      v2Val.textContent = rawGasValue;
-      v3Val.textContent = totalAcceleration.toFixed(2) + ' G';
-
-      // Update Chart.js
-      const timeLabel = new Date().toLocaleTimeString();
-      if (telemetryChart.data.labels.length > 15) {
-        telemetryChart.data.labels.shift();
-        telemetryChart.data.datasets[0].data.shift();
-        telemetryChart.data.datasets[1].data.shift();
-        telemetryChart.data.datasets[2].data.shift();
-      }
-      telemetryChart.data.labels.push(timeLabel);
-      telemetryChart.data.datasets[0].data.push(temperature);
-      telemetryChart.data.datasets[1].data.push(rawGasValue / 100.0);
-      telemetryChart.data.datasets[2].data.push(totalAcceleration);
-      telemetryChart.update('none');
-
-    } else {
-      // Save to array storage blocks if internet drops out
-      if (cachedLogCounter < STORAGE_LIMIT) {
-        localTempLog[cachedLogCounter] = temperature;
-        localGasLog[cachedLogCounter] = rawGasValue;
-        localVibLog[cachedLogCounter] = totalAcceleration;
-        cachedLogCounter++;
-        printSerial(`>> OFFLINE: Data saved to local memory cache. Total stored: ${cachedLogCounter}`, false, true);
-      } else {
-        for (let i = 1; i < STORAGE_LIMIT; i++) {
-          localTempLog[i - 1] = localTempLog[i];
-          localGasLog[i - 1] = localGasLog[i];
-          localVibLog[i - 1] = localVibLog[i];
-        }
-        localTempLog[STORAGE_LIMIT - 1] = temperature;
-        localGasLog[STORAGE_LIMIT - 1] = rawGasValue;
-        localVibLog[STORAGE_LIMIT - 1] = totalAcceleration;
-        printSerial('>> CACHE STORAGE FULL: Overwriting oldest log entries.', false, true);
-      }
+    // 7. Update Chart.js Live Graph
+    const timeLabel = new Date().toLocaleTimeString();
+    if (telemetryChart.data.labels.length > 15) {
+      telemetryChart.data.labels.shift();
+      telemetryChart.data.datasets[0].data.shift();
+      telemetryChart.data.datasets[1].data.shift();
+      telemetryChart.data.datasets[2].data.shift();
+      telemetryChart.data.datasets[3].data.shift();
     }
-
-    // Update Cache progress bar UI
-    cacheCountText.textContent = `${cachedLogCounter} / ${STORAGE_LIMIT} Logs Cached`;
-    const pct = (cachedLogCounter / STORAGE_LIMIT) * 100;
-    cacheProgress.style.width = pct + '%';
-    cacheDesc.innerHTML = isWifiConnected 
-      ? '<i class="fa-solid fa-shield-halved"></i> Online mode: Live telemetry broadcasting to Blynk Cloud.' 
-      : `<i class="fa-solid fa-database"></i> Offline mode: Storing readings in internal ESP32 RAM buffer (${cachedLogCounter} stored).`;
-
-    printSerial('-----------------------------------------------------------------');
+    telemetryChart.data.labels.push(timeLabel);
+    telemetryChart.data.datasets[0].data.push(currentTemp);
+    telemetryChart.data.datasets[1].data.push(currentHum);
+    telemetryChart.data.datasets[2].data.push(currentGas / 100.0);
+    telemetryChart.data.datasets[3].data.push(currentMotion);
+    telemetryChart.update('none');
   }
 
-  // Run initial tick and start loop
-  firmwareLoop();
-  setInterval(firmwareLoop, 2000);
-
-  // --- CLI Compile Trigger Handler ---
-  compileBtn.addEventListener('click', async () => {
-    cliBuildStatus.textContent = 'Compiling firmware with arduino-cli for esp32:esp32:esp32...';
-    cliBuildStatus.style.color = '#38bdf8';
-    compileBtn.disabled = true;
-
-    try {
-      const response = await fetch('/api/compile', { method: 'POST' });
-      const data = await response.json();
-      if (data.success) {
-        cliBuildStatus.innerHTML = `<strong>BUILD SUCCESSFUL!</strong><br>${data.output.replace(/\n/g, '<br>')}`;
-        cliBuildStatus.style.color = '#10b981';
-      } else {
-        cliBuildStatus.innerHTML = `<strong>BUILD ERROR:</strong><br>${data.output.replace(/\n/g, '<br>')}`;
-        cliBuildStatus.style.color = '#ef4444';
-      }
-    } catch (err) {
-      cliBuildStatus.innerHTML = `Build status: Verified local source sketch.ino structure & library dependencies.`;
-      cliBuildStatus.style.color = '#a7f3d0';
-    } finally {
-      compileBtn.disabled = false;
-    }
-  });
+  // Initial Tick & Interval loop
+  telemetryTick();
+  setInterval(telemetryTick, 1500);
 
 });
