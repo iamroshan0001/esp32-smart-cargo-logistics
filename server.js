@@ -5,6 +5,12 @@ const { exec } = require('child_process');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = __dirname;
+const LIVE_LOG_FILE = path.join(PUBLIC_DIR, 'live_sensor_logs.csv');
+
+// Initialize live sensor log CSV header if file doesn't exist
+if (!fs.existsSync(LIVE_LOG_FILE)) {
+  fs.writeFileSync(LIVE_LOG_FILE, 'Timestamp,Temperature_C,Humidity_Pct,Gas_PPM,Motion_G,AccelX,AccelY,AccelZ,Source\n', 'utf8');
+}
 
 const MIME_TYPES = {
   '.html': 'text/html',
@@ -58,12 +64,19 @@ const server = http.createServer((req, res) => {
           accelX: parseFloat(data.accelX || 0),
           accelY: parseFloat(data.accelY || 0),
           accelZ: parseFloat(data.accelZ || 9.81),
-          source: 'ESP32_WIFI_DIRECT',
+          source: data.source || 'ESP32_WIFI_DIRECT',
           lastUpdated: new Date().toISOString()
         };
-        console.log(`[ESP32 STREAM] Live Telemetry Received: Temp=${latestTelemetry.temp}°C, Hum=${latestTelemetry.hum}%, Gas=${latestTelemetry.gas}PPM, Motion=${latestTelemetry.motion}G`);
+
+        // Append live telemetry record to live_sensor_logs.csv
+        const logLine = `${latestTelemetry.lastUpdated},${latestTelemetry.temp},${latestTelemetry.hum},${latestTelemetry.gas},${latestTelemetry.motion},${latestTelemetry.accelX},${latestTelemetry.accelY},${latestTelemetry.accelZ},${latestTelemetry.source}\n`;
+        fs.appendFile(LIVE_LOG_FILE, logLine, err => {
+          if (err) console.error('CSV Log Error:', err);
+        });
+
+        console.log(`[ESP32 STREAM] Live Telemetry Logged: Temp=${latestTelemetry.temp}°C, Hum=${latestTelemetry.hum}%, Gas=${latestTelemetry.gas}PPM, Motion=${latestTelemetry.motion}G`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, message: 'Telemetry received successfully', timestamp: latestTelemetry.lastUpdated }));
+        res.end(JSON.stringify({ success: true, message: 'Telemetry received and logged', timestamp: latestTelemetry.lastUpdated }));
       } catch (e) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: 'Invalid JSON payload' }));
@@ -120,5 +133,6 @@ server.listen(PORT, () => {
   console.log(` Web Dashboard: http://localhost:${PORT}`);
   console.log(` Live Telemetry POST API: http://localhost:${PORT}/api/telemetry`);
   console.log(` AI Dataset CSV: http://localhost:${PORT}/cargo_sensor_dataset.csv`);
+  console.log(` Live Sensor Log CSV: http://localhost:${PORT}/live_sensor_logs.csv`);
   console.log(`=======================================================`);
 });
