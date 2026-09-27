@@ -1,5 +1,5 @@
 // ESP32 Smart Cargo Logistics — Edge AI & Hardware Sensor Telemetry Firmware
-// Standalone WiFi Web Server & REST API Stream (No USB Cable Required)
+// Direct Local Web Server & WiFi REST API Stream (Bulletproof Watchdog & Power Stability)
 
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
@@ -26,19 +26,19 @@
 // WiFi Network Credentials
 char ssid[] = "roshan";              // <-- Enter your WiFi SSID
 char pass[] = "rkumar001";          // <-- Enter your WiFi Password
-String serverApiUrl = "http://192.168.1.100:3000/api/telemetry"; // Local Server IP
+String serverApiUrl = "http://192.168.1.100:3000/api/telemetry"; // Change to your Laptop Local IP
 
 DHT dht(DHTPIN, DHTTYPE);
 Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified(12345);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-WebServer server(80); // Embedded Wireless HTTP Web Server
+WebServer server(80); // Embedded Wireless Web Server
 
 bool adxlFound = false;
 const float TEMP_MAX_LIMIT = 30.0;
 const int GAS_MAX_LIMIT = 2200;
 const float VIBRATION_SHOCK_G = 2.5;
 
-// Shared sensor variables for HTTP responses
+// Shared sensor variables
 float temperature = 25.5;
 float humidity = 46.0;
 int rawGasValue = 1420;
@@ -67,18 +67,19 @@ void setup() {
   pinMode(LED_GREEN_PIN, OUTPUT);
   pinMode(RELAY_PIN, OUTPUT);
 
-  // Actuator Self-Test Sequence
-  Serial.println(">> ESP32 Edge AI Cargo Wireless System Booting...");
+  // Actuator Self-Test Sequence (Sequential pulses to prevent power dip)
+  Serial.println(">> ESP32 Edge AI Cargo System Booting...");
   digitalWrite(LED_GREEN_PIN, HIGH); delay(150); digitalWrite(LED_GREEN_PIN, LOW);
   digitalWrite(LED_RED_PIN, HIGH);   delay(150); digitalWrite(LED_RED_PIN, LOW);
   tone(BUZZER_PIN, 1500);            delay(150); noTone(BUZZER_PIN);
   digitalWrite(RELAY_PIN, HIGH);     delay(150); digitalWrite(RELAY_PIN, LOW);
+  delay(100);
 
   // Initialize I2C Bus
   Wire.begin(21, 22);
   delay(100);
 
-  // Scan I2C for LCD
+  // Scan I2C for LCD (0x27 or 0x3F)
   byte lcdAddr = 0x27;
   Wire.beginTransmission(0x3F);
   if (Wire.endTransmission() == 0) lcdAddr = 0x3F;
@@ -88,10 +89,10 @@ void setup() {
   lcd.backlight();
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Smart Cargo AI");
+  lcd.print("Smart Cargo IoT");
   lcd.setCursor(0, 1);
-  lcd.print("WiFi Wireless");
-  delay(1200);
+  lcd.print("System Starting.");
+  delay(1500);
 
   dht.begin();
 
@@ -109,11 +110,16 @@ void setup() {
     Serial.println(">> WARNING: ADXL345 not detected. Using dynamic analog vibration baseline.");
   }
 
-  // Connect to WiFi
+  // Connect to WiFi (Non-blocking with yield to prevent watchdog timeout)
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Connecting WiFi");
+
   WiFi.begin(ssid, pass);
   int wifiAttempts = 0;
-  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 15) {
-    delay(400);
+  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 12) {
+    delay(300);
+    yield(); // Feed watchdog timer
     wifiAttempts++;
   }
 
@@ -125,9 +131,15 @@ void setup() {
     lcd.print("WiFi Connected!");
     lcd.setCursor(0, 1);
     lcd.print(WiFi.localIP().toString());
-    delay(2000);
+    delay(1500);
   } else {
     Serial.println(">> WiFi Standby mode.");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("WiFi Standby");
+    lcd.setCursor(0, 1);
+    lcd.print("Running Local");
+    delay(1500);
   }
 
   // Setup ESP32 embedded Web Server
@@ -139,6 +151,8 @@ void setup() {
 }
 
 void loop() {
+  yield(); // Feed CPU Watchdog Timer
+
   server.handleClient(); // Handle incoming wireless HTTP requests
 
   // 1. HARDWARE SENSOR READINGS
@@ -200,13 +214,14 @@ void loop() {
   Serial.print(" Ay: "); Serial.print(ay, 2);
   Serial.print(" Az: "); Serial.println(az, 2);
 
-  // 5. DIRECT HTTP REST API STREAM TO DASHBOARD SERVER
+  // 5. SAFE NON-BLOCKING REST API STREAM TO DASHBOARD SERVER
   static unsigned long lastPushTime = 0;
   if (millis() - lastPushTime > 1500) {
     lastPushTime = millis();
     if (WiFi.status() == WL_CONNECTED && serverApiUrl.startsWith("http")) {
       HTTPClient http;
       http.begin(serverApiUrl);
+      http.setTimeout(400); // 400ms max timeout — prevents Watchdog WDT lockup!
       http.addHeader("Content-Type", "application/json");
 
       String jsonPayload = "{\"temp\":" + String(temperature, 1) +
@@ -220,10 +235,13 @@ void loop() {
       int httpCode = http.POST(jsonPayload);
       if (httpCode > 0) {
         Serial.println(">> REST API: Telemetry pushed to Dashboard server over WiFi.");
+      } else {
+        Serial.println(">> REST API: Server unreachable. Operating in standalone mode.");
       }
       http.end();
     }
   }
 
-  delay(100);
+  delay(200);
+  yield(); // Feed CPU Watchdog Timer
 }
