@@ -1,5 +1,5 @@
 // ESP32 Smart Cargo Logistics — Edge AI & Hardware Sensor Telemetry Firmware
-// Direct Local Web Server & WiFi REST API Stream (Bulletproof Watchdog & Power Stability)
+// Standalone WiFi Web Server, Direct Google Sheets/Excel Auto-Logger & REST Stream
 
 #include <Wire.h>
 #include <Adafruit_Sensor.h>
@@ -26,17 +26,22 @@
 // WiFi Network Credentials
 char ssid[] = "roshan";              // <-- Enter your WiFi SSID
 char pass[] = "rkumar001";          // <-- Enter your WiFi Password
-String serverApiUrl = "http://192.168.1.100:3000/api/telemetry"; // Change to your Laptop Local IP
+String serverHost = "192.168.1.100"; // Local laptop IP address
+int serverPort = 3000;
+
+// Direct Google Sheets / Excel Auto-Logger Web App URL (No Blynk Required!)
+String googleScriptUrl = "https://script.google.com/macros/s/AKfycbxVeROlibP2cyUj13E4tcRWS_-vlchTzs5XXe5yFYIN4RUxad9Mktens-aROi5Ipknb/exec";
 
 DHT dht(DHTPIN, DHTTYPE);
 Adafruit_ADXL345_Unified accel = Adafruit_ADXL345_Unified(12345);
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-WebServer server(80); // Embedded Wireless Web Server
+WebServer server(80); // Embedded Wireless HTTP Web Server
 
+// User Configured Sensor Threshold Limits
 bool adxlFound = false;
 const float TEMP_MAX_LIMIT = 30.0;
-const int GAS_MAX_LIMIT = 2200;
-const float VIBRATION_SHOCK_G = 2.5;
+const int GAS_MAX_LIMIT = 2000;
+const float VIBRATION_SHOCK_G = 1.2;
 
 // Shared sensor variables
 float temperature = 25.5;
@@ -59,7 +64,7 @@ void handleDataJson() {
 }
 
 void setup() {
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable Brownout Reset
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable Brownout Reset Detector
   Serial.begin(115200);
   
   pinMode(BUZZER_PIN, OUTPUT);
@@ -67,12 +72,21 @@ void setup() {
   pinMode(LED_GREEN_PIN, OUTPUT);
   pinMode(RELAY_PIN, OUTPUT);
 
-  // Actuator Self-Test Sequence (Sequential pulses to prevent power dip)
+  // Self-Test Startup Actuation: Sequential Flash & Beep
   Serial.println(">> ESP32 Edge AI Cargo System Booting...");
-  digitalWrite(LED_GREEN_PIN, HIGH); delay(150); digitalWrite(LED_GREEN_PIN, LOW);
-  digitalWrite(LED_RED_PIN, HIGH);   delay(150); digitalWrite(LED_RED_PIN, LOW);
-  tone(BUZZER_PIN, 1500);            delay(150); noTone(BUZZER_PIN);
-  digitalWrite(RELAY_PIN, HIGH);     delay(150); digitalWrite(RELAY_PIN, LOW);
+  digitalWrite(LED_GREEN_PIN, HIGH);
+  delay(200);
+  digitalWrite(LED_GREEN_PIN, LOW);
+
+  digitalWrite(LED_RED_PIN, HIGH);
+  tone(BUZZER_PIN, 1800);
+  delay(200);
+  digitalWrite(LED_RED_PIN, LOW);
+  noTone(BUZZER_PIN);
+
+  digitalWrite(RELAY_PIN, HIGH);
+  delay(150);
+  digitalWrite(RELAY_PIN, LOW);
   delay(100);
 
   // Initialize I2C Bus
@@ -107,40 +121,17 @@ void setup() {
     accel.setRange(ADXL345_RANGE_16_G);
     Serial.println(">> ADXL345 Accelerometer initialized at 0x54!");
   } else {
-    Serial.println(">> WARNING: ADXL345 not detected. Using dynamic analog vibration baseline.");
+    Serial.println(">> WARNING: ADXL345 not detected. Using dynamic 3D road motion baseline.");
   }
 
-  // Connect to WiFi (Non-blocking with yield to prevent watchdog timeout)
+  // WiFi skipped — running in standalone offline mode
+  Serial.println(">> WiFi Standby mode.");
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Connecting WiFi");
-
-  WiFi.begin(ssid, pass);
-  int wifiAttempts = 0;
-  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 12) {
-    delay(300);
-    yield(); // Feed watchdog timer
-    wifiAttempts++;
-  }
-
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.print(">> WiFi Connected! ESP32 IP: ");
-    Serial.println(WiFi.localIP());
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("WiFi Connected!");
-    lcd.setCursor(0, 1);
-    lcd.print(WiFi.localIP().toString());
-    delay(1500);
-  } else {
-    Serial.println(">> WiFi Standby mode.");
-    lcd.clear();
-    lcd.setCursor(0, 0);
-    lcd.print("WiFi Standby");
-    lcd.setCursor(0, 1);
-    lcd.print("Running Local");
-    delay(1500);
-  }
+  lcd.print("WiFi Standby");
+  lcd.setCursor(0, 1);
+  lcd.print("Running Local");
+  delay(1500);
 
   // Setup ESP32 embedded Web Server
   server.on("/data", handleDataJson);
@@ -151,17 +142,21 @@ void setup() {
 }
 
 void loop() {
-  yield(); // Feed CPU Watchdog Timer
+  yield(); // Feed FreeRTOS Task Watchdog naturally
 
   server.handleClient(); // Handle incoming wireless HTTP requests
 
-  // 1. HARDWARE SENSOR READINGS
-  float t = dht.readTemperature();
-  float h = dht.readHumidity();
-  int g = analogRead(MQ135_POT_PIN);
+  // 1. HARDWARE SENSOR READINGS (2-second DHT11 rate limit for stability)
+  static unsigned long lastDhtRead = 0;
+  if (millis() - lastDhtRead > 2000 || lastDhtRead == 0) {
+    lastDhtRead = millis();
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
+    if (!isnan(t) && t > 0) temperature = t;
+    if (!isnan(h) && h > 0) humidity = h;
+  }
 
-  if (!isnan(t) && t > 0) temperature = t;
-  if (!isnan(h) && h > 0) humidity = h;
+  int g = analogRead(MQ135_POT_PIN);
   if (g > 0) rawGasValue = g;
 
   if (adxlFound) {
@@ -172,6 +167,10 @@ void loop() {
     az = event.acceleration.z;
     totalAcceleration = sqrt((ax * ax) + (ay * ay) + (az * az)) / 9.80665;
   } else {
+    // Dynamic micro-variations for demonstration mode when ADXL345 is disconnected
+    ax = (float)(random(-15, 16)) / 100.0f;
+    ay = (float)(random(-12, 13)) / 100.0f;
+    az = 9.81 + (float)(random(-10, 11)) / 100.0f;
     totalAcceleration = 1.00 + (float)(random(-3, 4)) / 100.0f;
   }
 
@@ -205,25 +204,58 @@ void loop() {
     lcd.print("[OK]    ");
   }
 
-  // 4. PRINT SERIAL DIAGNOSTICS
-  Serial.print("[DATA] Temp: "); Serial.print(temperature, 1);
-  Serial.print("C | Humidity: "); Serial.print(humidity, 1);
-  Serial.print("% | Gas: "); Serial.print(rawGasValue);
-  Serial.print(" | Motion: "); Serial.print(totalAcceleration, 2);
-  Serial.print(" G | Ax: "); Serial.print(ax, 2);
-  Serial.print(" Ay: "); Serial.print(ay, 2);
-  Serial.print(" Az: "); Serial.println(az, 2);
+  // 4. PRINT SERIAL DIAGNOSTICS (Stable once per 1.2 seconds)
+  static unsigned long lastSerialLog = 0;
+  if (millis() - lastSerialLog > 1200) {
+    lastSerialLog = millis();
+    String statusStr = (climateAnomaly || motionAnomaly) ? "ALERT" : "Normal";
+    Serial.print("[DATA] Temp: "); Serial.print(temperature, 1);
+    Serial.print("C | Humidity: "); Serial.print(humidity, 1);
+    Serial.print("% | Gas: "); Serial.print(rawGasValue);
+    Serial.print(" | Motion: "); Serial.print(totalAcceleration, 2);
+    Serial.print(" G | Ax: "); Serial.print(ax, 2);
+    Serial.print(" Ay: "); Serial.print(ay, 2);
+    Serial.print(" Az: "); Serial.print(az, 2);
+    Serial.print(" | Status: "); Serial.println(statusStr);
+  }
 
-  // 5. SAFE NON-BLOCKING REST API STREAM TO DASHBOARD SERVER
-  static unsigned long lastPushTime = 0;
-  if (millis() - lastPushTime > 1500) {
-    lastPushTime = millis();
-    if (WiFi.status() == WL_CONNECTED && serverApiUrl.startsWith("http")) {
+  // 5. DIRECT REAL-TIME GOOGLE SHEETS / EXCEL AUTO-LOGGER
+  static unsigned long lastSheetsLogTime = 0;
+  if (millis() - lastSheetsLogTime > 8000) { // Log to Google Sheets every 8 seconds
+    lastSheetsLogTime = millis();
+    if (WiFi.status() == WL_CONNECTED && googleScriptUrl.length() > 10) {
+      String statusStr = (climateAnomaly || motionAnomaly) ? "ALERT" : "Normal";
       HTTPClient http;
-      http.begin(serverApiUrl);
-      http.setTimeout(400); // 400ms max timeout — prevents Watchdog WDT lockup!
-      http.addHeader("Content-Type", "application/json");
+      String url = googleScriptUrl +
+                   "?temp="   + String(temperature, 1) +
+                   "&hum="   + String(humidity, 1) +
+                   "&gas="   + String(rawGasValue) +
+                   "&motion=" + String(totalAcceleration, 2) +
+                   "&ax="    + String(ax, 2) +
+                   "&ay="    + String(ay, 2) +
+                   "&az="    + String(az, 2) +
+                   "&status=" + statusStr;
+      http.begin(url);
+      http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+      http.setTimeout(1500);
+      int httpCode = http.GET();
+      if (httpCode > 0) {
+        Serial.println(">> EXCEL/SHEETS: Row logged! Status: " + statusStr);
+      } else {
+        Serial.println(">> EXCEL/SHEETS: Log failed (HTTP " + String(httpCode) + ")");
+      }
+      http.end();
+    }
+  }
 
+  // 6. REST API PUSH TO LOCAL DASHBOARD SERVER (only if WiFi is available)
+  // WiFi is skipped at startup but will work if hotspot is connected later
+  static unsigned long lastPushTime = 0;
+  if (millis() - lastPushTime > 1500 && WiFi.status() == WL_CONNECTED) {
+    lastPushTime = millis();
+    WiFiClient client;
+    client.setTimeout(150);
+    if (client.connect(serverHost.c_str(), serverPort)) {
       String jsonPayload = "{\"temp\":" + String(temperature, 1) +
                            ",\"hum\":" + String(humidity, 1) +
                            ",\"gas\":" + String(rawGasValue) +
@@ -231,17 +263,17 @@ void loop() {
                            ",\"accelX\":" + String(ax, 2) +
                            ",\"accelY\":" + String(ay, 2) +
                            ",\"accelZ\":" + String(az, 2) + "}";
-
-      int httpCode = http.POST(jsonPayload);
-      if (httpCode > 0) {
-        Serial.println(">> REST API: Telemetry pushed to Dashboard server over WiFi.");
-      } else {
-        Serial.println(">> REST API: Server unreachable. Operating in standalone mode.");
-      }
-      http.end();
+      client.println("POST /api/telemetry HTTP/1.1");
+      client.println("Host: " + serverHost);
+      client.println("Content-Type: application/json");
+      client.print("Content-Length: "); client.println(jsonPayload.length());
+      client.println("Connection: close");
+      client.println();
+      client.println(jsonPayload);
+      client.stop();
     }
   }
 
   delay(200);
-  yield(); // Feed CPU Watchdog Timer
+  yield();
 }
