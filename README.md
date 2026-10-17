@@ -45,8 +45,8 @@ Follow the prompts to confirm deployment to your Vercel team/account.
 
 ## ✨ Features & Functional Deck
 
-- 🌡️ **DHT22 Climate Sensor**: Temperature (-10°C to 60°C) & Humidity monitoring with an over-temperature trigger limit (> 28.0°C).
-- 💨 **MQ135 Gas Sensor**: Air quality & toxic gas detection with threshold limit (> 2200 PPM).
+- 🌡️ **DHT22 Climate Sensor**: Temperature (-10°C to 60°C) & Humidity monitoring with an over-temperature trigger limit (> 31.0°C).
+- 💨 **MQ135 Gas Sensor**: Air quality & toxic gas detection with threshold limit (> 4000 PPM).
 - 📳 **MPU6050 6-Axis Accelerometer/Gyro**: Real-time G-force motion & impact detection (> 2.50 G shock threshold).
 - 📦 **Interactive 3D Cargo Cube**: Dynamically updates 3D rotation angles (`rotateX` / `rotateY`) based on MPU6050 gravity vector inputs (`accelX`, `accelY`, `accelZ`).
 - ⚡ **Simulation Presets**: Instant one-click environment triggers:
@@ -54,7 +54,7 @@ Follow the prompts to confirm deployment to your Vercel team/account.
   - *Vertical Drop* (3.40G shock)
   - *Wall Collision* (2.90G impact)
   - *Cooling Failure* (34.5°C overheat)
-  - *Gas Spoilage* (3100 PPM leak)
+  - *Gas Spoilage* (4200 PPM leak)
 - 📡 **Blynk Cloud Virtual Pins**:
   - `V1`: Temperature (°C)
   - `V2`: Gas Level (PPM)

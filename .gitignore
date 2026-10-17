@@ -8,6 +8,7 @@ npm-debug.log*
 # Build outputs & scratch files
 build/
 *.log
+live_sensor_logs.csv
 
 # OS & IDE System Files
 .DS_Store

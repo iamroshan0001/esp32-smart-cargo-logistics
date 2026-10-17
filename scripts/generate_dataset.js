@@ -13,7 +13,7 @@ const startTime = Date.now() - (1000 * 3600 * 48); // Past 48 hours
 
 for (let i = 0; i < numRecords; i++) {
   const timestamp = new Date(startTime + i * 170000).toISOString();
-  
+
   // Distribute dataset across 70% normal and 30% anomaly conditions
   const rand = Math.random();
   let temp, hum, gas, motion, doorClosed, category, spoilageRisk, rsl;
@@ -53,11 +53,11 @@ for (let i = 0; i < numRecords; i++) {
     category = 'GAS_HAZARD';
     temp = +(26.0 + Math.random() * 6.0).toFixed(1);
     hum = +(50.0 + Math.random() * 15.0).toFixed(1);
-    gas = Math.floor(2250 + Math.random() * 1800); // > 2250 PPM
+    gas = Math.floor(4050 + Math.random() * 1500); // > 4000 PPM
     motion = +(1.00 + Math.random() * 0.30).toFixed(2);
     doorClosed = 1;
     spoilageRisk = +(75.0 + Math.random() * 24.0).toFixed(1);
-    rsl = +(Math.max(1.0, 18.0 - (gas - 2200) / 200)).toFixed(1);
+    rsl = +(Math.max(1.0, 18.0 - (gas - 4000) / 200)).toFixed(1);
   } else if (rand < 0.96) {
     // Physical Shock / Collision
     category = 'SHOCK_IMPACT';

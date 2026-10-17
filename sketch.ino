@@ -39,9 +39,9 @@ WebServer server(80); // Embedded Wireless HTTP Web Server
 
 // User Configured Sensor Threshold Limits
 bool adxlFound = false;
-const float TEMP_MAX_LIMIT = 30.0;
-const int GAS_MAX_LIMIT = 2000;
-const float VIBRATION_SHOCK_G = 1.2;
+const float TEMP_MAX_LIMIT = 31.3;
+const int GAS_MAX_LIMIT = 4000;
+const float VIBRATION_SHOCK_G = 1.25;
 
 // Shared sensor variables
 float temperature = 25.5;
@@ -124,14 +124,37 @@ void setup() {
     Serial.println(">> WARNING: ADXL345 not detected. Using dynamic 3D road motion baseline.");
   }
 
-  // WiFi skipped — running in standalone offline mode
-  Serial.println(">> WiFi Standby mode.");
+  // Connect to WiFi (Non-blocking retry loop with yield)
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("WiFi Standby");
-  lcd.setCursor(0, 1);
-  lcd.print("Running Local");
-  delay(1500);
+  lcd.print("Connecting WiFi");
+
+  WiFi.begin(ssid, pass);
+  int wifiAttempts = 0;
+  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 20) {
+    delay(500);
+    yield();
+    wifiAttempts++;
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print(">> WiFi Connected! ESP32 IP: ");
+    Serial.println(WiFi.localIP());
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("WiFi Connected!");
+    lcd.setCursor(0, 1);
+    lcd.print(WiFi.localIP().toString());
+    delay(1500);
+  } else {
+    Serial.println(">> WiFi Standby mode.");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("WiFi Standby");
+    lcd.setCursor(0, 1);
+    lcd.print("Running Local");
+    delay(1500);
+  }
 
   // Setup ESP32 embedded Web Server
   server.on("/data", handleDataJson);
@@ -193,12 +216,18 @@ void loop() {
   }
 
   // 3. LCD DISPLAY UPDATES
+  static unsigned long alertHoldUntil = 0;
+  if (climateAnomaly || motionAnomaly) {
+    alertHoldUntil = millis() + 2000; // Hold ALERT visible for 2 extra seconds
+  }
+  bool showAlert = (climateAnomaly || motionAnomaly || millis() < alertHoldUntil);
+
   lcd.setCursor(0, 0);
   lcd.print("T:"); lcd.print(temperature, 1); lcd.print("C G:"); lcd.print(rawGasValue); lcd.print("    ");
 
   lcd.setCursor(0, 1);
   lcd.print("M:"); lcd.print(totalAcceleration, 2); lcd.print("G ");
-  if (climateAnomaly || motionAnomaly) {
+  if (showAlert) {
     lcd.print("[ALERT!]");
   } else {
     lcd.print("[OK]    ");
@@ -208,15 +237,25 @@ void loop() {
   static unsigned long lastSerialLog = 0;
   if (millis() - lastSerialLog > 1200) {
     lastSerialLog = millis();
-    String statusStr = (climateAnomaly || motionAnomaly) ? "ALERT" : "Normal";
+    bool climateAlert = (temperature > TEMP_MAX_LIMIT || rawGasValue > GAS_MAX_LIMIT);
+    bool motionAlert  = (totalAcceleration > VIBRATION_SHOCK_G);
     Serial.print("[DATA] Temp: "); Serial.print(temperature, 1);
     Serial.print("C | Humidity: "); Serial.print(humidity, 1);
     Serial.print("% | Gas: "); Serial.print(rawGasValue);
     Serial.print(" | Motion: "); Serial.print(totalAcceleration, 2);
     Serial.print(" G | Ax: "); Serial.print(ax, 2);
     Serial.print(" Ay: "); Serial.print(ay, 2);
-    Serial.print(" Az: "); Serial.print(az, 2);
-    Serial.print(" | Status: "); Serial.println(statusStr);
+    Serial.print(" Az: "); Serial.println(az, 2);
+    // Status line matching dashboard style
+    if (climateAlert && motionAlert) {
+      Serial.println("SYSTEM MONITOR: CRITICAL ALERT! [Temp/Gas + Shock Detected]");
+    } else if (climateAlert) {
+      Serial.println("SYSTEM MONITOR: CLIMATE ALERT! [Cargo Environment at Risk]");
+    } else if (motionAlert) {
+      Serial.println("SYSTEM MONITOR: SHOCK ALERT! [Impact / Vibration Detected]");
+    } else {
+      Serial.println("SYSTEM MONITOR: Cargo Metrics Stable [Normal Road Conditions]");
+    }
   }
 
   // 5. DIRECT REAL-TIME GOOGLE SHEETS / EXCEL AUTO-LOGGER
@@ -224,53 +263,49 @@ void loop() {
   if (millis() - lastSheetsLogTime > 8000) { // Log to Google Sheets every 8 seconds
     lastSheetsLogTime = millis();
     if (WiFi.status() == WL_CONNECTED && googleScriptUrl.length() > 10) {
-      String statusStr = (climateAnomaly || motionAnomaly) ? "ALERT" : "Normal";
       HTTPClient http;
-      String url = googleScriptUrl +
-                   "?temp="   + String(temperature, 1) +
-                   "&hum="   + String(humidity, 1) +
-                   "&gas="   + String(rawGasValue) +
+      String url = googleScriptUrl + "?temp=" + String(temperature, 1) +
+                   "&hum=" + String(humidity, 1) +
+                   "&gas=" + String(rawGasValue) +
                    "&motion=" + String(totalAcceleration, 2) +
-                   "&ax="    + String(ax, 2) +
-                   "&ay="    + String(ay, 2) +
-                   "&az="    + String(az, 2) +
-                   "&status=" + statusStr;
+                   "&status=" + String((climateAnomaly || motionAnomaly) ? "ALERT" : "Normal");
       http.begin(url);
       http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-      http.setTimeout(1500);
+      http.setTimeout(1200);
       int httpCode = http.GET();
       if (httpCode > 0) {
-        Serial.println(">> EXCEL/SHEETS: Row logged! Status: " + statusStr);
-      } else {
-        Serial.println(">> EXCEL/SHEETS: Log failed (HTTP " + String(httpCode) + ")");
+        Serial.println(">> GOOGLE SHEETS / EXCEL: Telemetry logged directly to spreadsheet!");
       }
       http.end();
     }
   }
 
-  // 6. REST API PUSH TO LOCAL DASHBOARD SERVER (only if WiFi is available)
-  // WiFi is skipped at startup but will work if hotspot is connected later
+  // 6. NON-BLOCKING REST API PUSH TO LOCAL DASHBOARD SERVER
   static unsigned long lastPushTime = 0;
-  if (millis() - lastPushTime > 1500 && WiFi.status() == WL_CONNECTED) {
+  if (millis() - lastPushTime > 1500) {
     lastPushTime = millis();
-    WiFiClient client;
-    client.setTimeout(150);
-    if (client.connect(serverHost.c_str(), serverPort)) {
-      String jsonPayload = "{\"temp\":" + String(temperature, 1) +
-                           ",\"hum\":" + String(humidity, 1) +
-                           ",\"gas\":" + String(rawGasValue) +
-                           ",\"motion\":" + String(totalAcceleration, 2) +
-                           ",\"accelX\":" + String(ax, 2) +
-                           ",\"accelY\":" + String(ay, 2) +
-                           ",\"accelZ\":" + String(az, 2) + "}";
-      client.println("POST /api/telemetry HTTP/1.1");
-      client.println("Host: " + serverHost);
-      client.println("Content-Type: application/json");
-      client.print("Content-Length: "); client.println(jsonPayload.length());
-      client.println("Connection: close");
-      client.println();
-      client.println(jsonPayload);
-      client.stop();
+    if (WiFi.status() == WL_CONNECTED) {
+      WiFiClient client;
+      client.setTimeout(150);
+      if (client.connect(serverHost.c_str(), serverPort)) {
+        String jsonPayload = "{\"temp\":" + String(temperature, 1) +
+                             ",\"hum\":" + String(humidity, 1) +
+                             ",\"gas\":" + String(rawGasValue) +
+                             ",\"motion\":" + String(totalAcceleration, 2) +
+                             ",\"accelX\":" + String(ax, 2) +
+                             ",\"accelY\":" + String(ay, 2) +
+                             ",\"accelZ\":" + String(az, 2) + "}";
+
+        client.println("POST /api/telemetry HTTP/1.1");
+        client.println("Host: " + serverHost);
+        client.println("Content-Type: application/json");
+        client.print("Content-Length: ");
+        client.println(jsonPayload.length());
+        client.println("Connection: close");
+        client.println();
+        client.println(jsonPayload);
+        client.stop();
+      }
     }
   }
 

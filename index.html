@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,13 +8,16 @@
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@400;600;700;800&display=swap"
+    rel="stylesheet">
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
 
   <!-- App Header Navigation -->
@@ -40,7 +44,8 @@
 
       <!-- Direct Connection Badge -->
       <div class="blynk-status-badge online" id="connectionBadge">
-        <span class="status-dot" id="connDot"></span> <i class="fa-solid fa-wifi"></i> <span id="connText">Hardware Stream: LIVE</span>
+        <span class="status-dot" id="connDot"></span> <i class="fa-solid fa-wifi"></i> <span id="connText">Hardware
+          Stream: LIVE</span>
       </div>
     </div>
   </header>
@@ -71,9 +76,11 @@
         </div>
         <div class="kpi-body">
           <span class="kpi-value" id="tempVal">27.7 <small>°C</small></span>
-          <span class="kpi-sub">Limit: &gt; 30.0 °C</span>
+          <span class="kpi-sub">Limit: &gt; 31.3 °C</span>
         </div>
-        <div class="kpi-bar"><div class="kpi-bar-fill temp-bar" id="tempBar" style="width: 46%;"></div></div>
+        <div class="kpi-bar">
+          <div class="kpi-bar-fill temp-bar" id="tempBar" style="width: 46%;"></div>
+        </div>
       </div>
 
       <!-- Humidity Card -->
@@ -84,9 +91,11 @@
         </div>
         <div class="kpi-body">
           <span class="kpi-value" id="humVal">45.0 <small>%</small></span>
-          <span class="kpi-sub">Shift Limit: ±10.0 %</span>
+          <span class="kpi-sub">Shift Limit: ±15.0 %</span>
         </div>
-        <div class="kpi-bar"><div class="kpi-bar-fill hum-bar" id="humBar" style="width: 45%;"></div></div>
+        <div class="kpi-bar">
+          <div class="kpi-bar-fill hum-bar" id="humBar" style="width: 45%;"></div>
+        </div>
       </div>
 
       <!-- Gas Level Card -->
@@ -97,9 +106,11 @@
         </div>
         <div class="kpi-body">
           <span class="kpi-value" id="gasVal">1450 <small>PPM</small></span>
-          <span class="kpi-sub">Limit: &gt; 2200 PPM</span>
+          <span class="kpi-sub">Limit: &gt; 4000 PPM</span>
         </div>
-        <div class="kpi-bar"><div class="kpi-bar-fill gas-bar" id="gasBar" style="width: 35%;"></div></div>
+        <div class="kpi-bar">
+          <div class="kpi-bar-fill gas-bar" id="gasBar" style="width: 35%;"></div>
+        </div>
       </div>
 
       <!-- Motion / Acceleration G-Force Card -->
@@ -110,9 +121,11 @@
         </div>
         <div class="kpi-body">
           <span class="kpi-value" id="motionVal">1.02 <small>G</small></span>
-          <span class="kpi-sub">Shock Limit: &gt; 2.50 G</span>
+          <span class="kpi-sub">Shock Limit: &gt; 1.25 G</span>
         </div>
-        <div class="kpi-bar"><div class="kpi-bar-fill motion-bar" id="motionBar" style="width: 20%;"></div></div>
+        <div class="kpi-bar">
+          <div class="kpi-bar-fill motion-bar" id="motionBar" style="width: 20%;"></div>
+        </div>
       </div>
 
     </div>
@@ -127,7 +140,8 @@
       <div class="ai-grid">
         <!-- AI Card 1: Spoilage & Shelf Life -->
         <div class="ai-box">
-          <div class="ai-box-title"><i class="fa-solid fa-hourglass-half"></i> Predictive Cargo Spoilage & Shelf Life</div>
+          <div class="ai-box-title"><i class="fa-solid fa-hourglass-half"></i> Predictive Cargo Spoilage & Shelf Life
+          </div>
           <div class="ai-stat-row">
             <div>
               <span class="ai-label">Spoilage Risk Index</span>
@@ -147,7 +161,9 @@
           <div class="ai-category-title" id="aiCategoryTitle">NORMAL ROAD TRANSIT</div>
           <div class="ai-confidence-bar">
             <span>AI Confidence: <strong id="aiConfidenceVal">98.4%</strong></span>
-            <div class="conf-bar-bg"><div class="conf-bar-fill" id="aiConfFill" style="width: 98.4%;"></div></div>
+            <div class="conf-bar-bg">
+              <div class="conf-bar-fill" id="aiConfFill" style="width: 98.4%;"></div>
+            </div>
           </div>
           <div class="ai-recommendation" id="aiRecommendation">
             <i class="fa-solid fa-circle-check"></i> All cargo parameters within safe thermal and physical tolerances.
@@ -186,11 +202,16 @@
           <div class="presets-section">
             <h3><i class="fa-solid fa-wand-magic-sparkles"></i> Demonstration Scenarios</h3>
             <div class="preset-buttons">
-              <button class="btn-preset active" id="presetNormal"><i class="fa-solid fa-check"></i> Normal Transit (27.7°C, 45%)</button>
-              <button class="btn-preset" id="presetHumShift"><i class="fa-solid fa-droplet"></i> Humidity Shift (+15% Shift)</button>
-              <button class="btn-preset" id="presetHeat"><i class="fa-solid fa-fire"></i> Cooling Failure (34.5°C)</button>
-              <button class="btn-preset" id="presetImpact"><i class="fa-solid fa-car-burst"></i> Impact Shock (3.40G)</button>
-              <button class="btn-preset" id="presetGas"><i class="fa-solid fa-biohazard"></i> Toxic Gas Spoilage (3100 PPM)</button>
+              <button class="btn-preset active" id="presetNormal"><i class="fa-solid fa-check"></i> Normal Transit
+                (27.7°C, 45%)</button>
+              <button class="btn-preset" id="presetHumShift"><i class="fa-solid fa-droplet"></i> Humidity Shift (+15%
+                Shift)</button>
+              <button class="btn-preset" id="presetHeat"><i class="fa-solid fa-fire"></i> Cooling Failure
+                (34.5°C)</button>
+              <button class="btn-preset" id="presetImpact"><i class="fa-solid fa-car-burst"></i> Impact Shock
+                (3.40G)</button>
+              <button class="btn-preset" id="presetGas"><i class="fa-solid fa-biohazard"></i> Toxic Gas Spoilage (4200
+                PPM)</button>
             </div>
           </div>
 
@@ -217,9 +238,11 @@
               <label><i class="fa-solid fa-satellite"></i> Wireless ESP32 Target IP / Endpoint:</label>
               <div class="ip-input-group">
                 <input type="text" id="esp32IpInput" value="/api/telemetry" placeholder="e.g. http://192.168.1.15/data">
-                <button class="btn-sm btn-ip-connect" id="connectIpBtn"><i class="fa-solid fa-link"></i> Sync WiFi</button>
+                <button class="btn-sm btn-ip-connect" id="connectIpBtn"><i class="fa-solid fa-link"></i> Sync
+                  WiFi</button>
               </div>
-              <p class="wifi-hint"><i class="fa-solid fa-shield-halved"></i> Connect ESP32 to WiFi — Telemetry streams wirelessly without USB</p>
+              <p class="wifi-hint"><i class="fa-solid fa-shield-halved"></i> Connect ESP32 to WiFi — Telemetry streams
+                wirelessly without USB</p>
             </div>
           </div>
         </section>
@@ -267,7 +290,8 @@
               <div class="box-face top">ESP32 MCU</div>
               <div class="box-face bottom">BASE</div>
             </div>
-            <p class="container-hint"><i class="fa-solid fa-hand-pointer"></i> 3D Container orientation syncs with live ADXL345 accelerometer vectors</p>
+            <p class="container-hint"><i class="fa-solid fa-hand-pointer"></i> 3D Container orientation syncs with live
+              ADXL345 accelerometer vectors</p>
           </div>
         </section>
 
@@ -305,7 +329,8 @@
 
   </main>
 
-  <script src="cargo_ai_model.js"></script>
-  <script src="app.js"></script>
+  <script src="cargo_ai_model.js?v=20261017"></script>
+  <script src="app.js?v=20261017"></script>
 </body>
+
 </html>

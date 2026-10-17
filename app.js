@@ -5,16 +5,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const aiModel = window.cargoAIModel || new CargoAIModel();
 
   // Operational Threshold Limits
-  const TEMP_MAX_LIMIT = 30.0;     // Baseline limit (°C)
-  const GAS_MAX_LIMIT = 2200;      // Air quality limit (PPM)
-  const VIBRATION_SHOCK_G = 2.50;  // Acceleration shock limit (G)
-  const HUMIDITY_SHIFT_LIMIT = 10.0; // 10% shift trigger
+  const TEMP_MAX_LIMIT = 31.3;     // Baseline limit (°C)
+  const GAS_MAX_LIMIT = 4000;      // Air quality limit (PPM)
+  const VIBRATION_SHOCK_G = 1.25;  // Acceleration shock limit (G)
+  const HUMIDITY_SHIFT_LIMIT = 15.0; // 10% shift trigger
 
   // Dynamic Sensor Telemetry State
   let currentTemp = 27.7;
   let currentHum = 45.0;
   let lastRecordedHum = 45.0;
-  let currentGas = 1450;
+  let currentGas = 1400;
   let currentMotion = 1.02;
 
   let accelX = 0.0;
@@ -135,7 +135,7 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         oscillator.stop();
         oscillator.disconnect();
-      } catch (e) {}
+      } catch (e) { }
       isWebSirenPlaying = false;
       oscillator = null;
     }
@@ -305,7 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (wifiLatencyVal) wifiLatencyVal.textContent = `~${measuredLatency} ms`;
         connText.textContent = 'Hardware Stream: WiFi DIRECT ONLINE';
       }
-    } catch (e) {}
+    } catch (e) { }
   }
   setInterval(pollServerTelemetry, 1200);
 
@@ -397,7 +397,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('presetGas').addEventListener('click', (e) => {
-    setPresetValues(28.0, 50.0, 3100, 0.98);
+    setPresetValues(28.0, 50.0, 4200, 0.98);
     setActivePreset(e.target);
   });
 
@@ -435,7 +435,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       currentTemp = Math.max(15.0, Math.min(50.0, currentTemp));
       currentHum = Math.max(20.0, Math.min(95.0, currentHum));
-      currentGas = Math.max(800, Math.min(4000, currentGas));
+      currentGas = Math.max(800, Math.min(5500, currentGas));
       currentMotion = Math.max(0.9, Math.min(4.5, currentMotion));
 
       totalPacketsReceived++;
@@ -478,7 +478,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     tempBar.style.width = Math.min(100, Math.max(10, ((currentTemp + 10) / 70) * 100)) + '%';
     humBar.style.width = Math.min(100, currentHum) + '%';
-    gasBar.style.width = Math.min(100, (currentGas / 4095) * 100) + '%';
+    gasBar.style.width = Math.min(100, (currentGas / 5000) * 100) + '%';
     motionBar.style.width = Math.min(100, (currentMotion / 5.0) * 100) + '%';
 
     tempTag.className = isTempAnomaly ? 'tag-status alert' : 'tag-status safe';
